@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <mpi.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
-#define N 5
+#define N 1024
 
 //AUXILIARY FUNCTIONS
 //--------------------------------------------------------------------------------
@@ -58,6 +58,9 @@ int main(int argc, char *argv[]) {
   struct timeval  worktime1, worktime2, commtime1, commtime2;
   int worktime, commtime;
 
+  int quotient = N / numprocs;
+  int remainder = N % numprocs;
+
   //INITIALIZE DATA
   //--------------------------------------------------------------------------------
 
@@ -74,8 +77,7 @@ int main(int argc, char *argv[]) {
     }
 
     //initialize the sendcounts array, that sets the number of elements to be sent to each process
-    int quotient = N / numprocs;
-    int remainder = N % numprocs;
+    
     sendcounts = (int *)malloc(numprocs * sizeof(int));
     for (i = 0; i < numprocs; i++) {
       sendcounts[i] = N * (quotient + (i < remainder ? 1 : 0)); //if i is less than the remainder, add 1 to the quotient (we split evenly the remainder among the first processes)
@@ -112,11 +114,10 @@ int main(int argc, char *argv[]) {
   
   MPI_Bcast(vector, N, MPI_FLOAT, 0, MPI_COMM_WORLD); //send the vector to all processes
 
-  int elements; //number of elements that this process will receive
-  MPI_Scatter(sendcounts, 1, MPI_INT, &elements, 1, MPI_INT, 0, MPI_COMM_WORLD); //send the count of elements to each process
+  int rows = quotient + (rank < remainder ? 1 : 0); //number of elements that this process will receive
 
-  float *recvbuf = (float *)malloc(elements * sizeof(float));
-  MPI_Scatterv(flatmatrix, sendcounts, displs, MPI_FLOAT, recvbuf, elements, MPI_FLOAT, 0, MPI_COMM_WORLD);
+  float *recvbuf = (float *)malloc(N * rows * sizeof(float));
+  MPI_Scatterv(flatmatrix, sendcounts, displs, MPI_FLOAT, recvbuf, N * rows, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
   gettimeofday(&commtime2, NULL); //stop time measure
   commtime = (commtime2.tv_usec - commtime1.tv_usec) + 1000000 * (commtime2.tv_sec - commtime1.tv_sec);
@@ -125,7 +126,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < numprocs; i++) {
       MPI_Barrier(MPI_COMM_WORLD); // Wait for all processes to reach this point
       if (rank == i) {
-        printDebugInfo(recvbuf, elements, vector, rank);
+        printDebugInfo(recvbuf, N * rows, vector, rank);
         sleep(1);
       }
     }
@@ -136,7 +137,6 @@ int main(int argc, char *argv[]) {
   //--------------------------------------------------------------------------------
   gettimeofday(&worktime1, NULL); //start time measure
 
-  int rows = elements / N;
   float result[rows];
   for (i = 0;i < rows;i++) {
     result[i]=0; //set result at that position to 0
